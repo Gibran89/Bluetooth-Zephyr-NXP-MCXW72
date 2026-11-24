@@ -1,0 +1,20 @@
+# Workspace de Zephyr (se genera con `west init` + `west update`, ~5 GB)
+zephyrproject/
+
+# Artefactos de build
+build/
+build-*/
+*.elf
+*.hex
+*.bin
+*.map
+
+# Editores / SO
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Instaladores de NXP descargados manualmente
+*.deb.bin
+*.bin.gz
