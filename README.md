@@ -47,14 +47,43 @@ Todo lo que escribas ahí persiste en tu host.
 
 ## 3. Inicializar el workspace de Zephyr (solo la primera vez)
 
-Dentro del contenedor:
+Dentro del contenedor, ejecuta cada comando en este orden:
 
 ```bash
 west init -m https://github.com/zephyrproject-rtos/zephyr --mr v4.4.2 /workdir/zephyrproject
+```
+
+Inicializa el workspace en `/workdir/zephyrproject` y clona Zephyr como
+repositorio manifiesto. Su archivo `west.yml` especifica los módulos y sus
+revisiones. `--mr v4.4.2` fija la versión de Zephyr usada y probada en este
+proyecto. Este comando se ejecuta solo al crear el workspace por primera vez.
+
+```bash
 cd /workdir/zephyrproject
+```
+
+Cambia a la raíz del workspace para que West encuentre su configuración y el
+manifiesto.
+
+```bash
 west update --narrow -o=--depth=1
+```
+
+Descarga las revisiones de los módulos indicadas por el manifiesto, incluido
+`hal_nxp`, necesario para la FRDM-MCXW72. `--narrow` evita descargar referencias
+Git innecesarias y `-o=--depth=1` crea clones superficiales para ahorrar espacio.
+La contrapartida es que esos clones no contienen el historial completo.
+
+```bash
 west zephyr-export
 ```
+
+Registra la instalación de Zephyr para que CMake y otras herramientas externas
+puedan localizarla.
+
+Si `/workdir/zephyrproject` ya existe y está inicializado, no repitas `west init`.
+Entra al directorio y ejecuta `west update` cuando necesites sincronizar los
+módulos con el manifiesto.
 
 > Solo se hace una vez: la carpeta `zephyrproject/` queda en tu host y no se borra
 > al salir del contenedor.
@@ -72,11 +101,6 @@ con todo su historial (~4 GB). Estas dos opciones lo reducen a menos de 1 GB:
 
 Es la misma estrategia que usa la CI de Zephyr. La contrapartida es que no tendrás
 historial de git dentro de los módulos, algo irrelevante para el curso.
-
-> **¿Y si solo uso una placa?** Aun así hay que ejecutar `west update`: el soporte de la
-> FRDM-MCXW72 vive en el módulo `hal_nxp`, que se descarga aquí. Se puede limitar la
-> descarga a una lista concreta de módulos, pero es frágil: al habilitar cualquier
-> funcionalidad nueva el build falla por módulos ausentes. No merece la pena.
 
 **Sobre la versión:** `v4.4.2` está fijada a propósito. La imagen `zephyr-build:v0.29.4`
 incluye el **Zephyr SDK 1.0.1**, que es el que corresponde a la serie 4.3/4.4. Usar una
