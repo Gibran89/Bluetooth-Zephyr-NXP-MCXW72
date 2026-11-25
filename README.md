@@ -1,7 +1,13 @@
 # Curso de Bluetooth con Zephyr y NXP FRDM-MCXW72
 
 Entorno de desarrollo reproducible basado en Docker para el curso de Bluetooth Low Energy
-sobre Zephyr RTOS y la placa **NXP FRDM-MCXW72**.
+sobre Zephyr RTOS y las placas **NXP FRDM-MCXW72** y **FRDM-MCXW71**.
+
+> **Dos placas, un mismo proyecto.** Los pasos 1 a 6 son comunes. Lo que cambia
+> entre placas es el nombre de la board de west (`frdm_mcxw72` / `frdm_mcxw71`),
+> el directorio de build y, sobre todo, el procedimiento de la NBU (sección 7).
+> `flash.sh` elige la placa con la variable `BOARD` (por defecto `frdm_mcxw72`).
+> **No mezcles los firmwares NBU de una placa con la otra.**
 
 ---
 
@@ -9,7 +15,7 @@ sobre Zephyr RTOS y la placa **NXP FRDM-MCXW72**.
 
 - Docker instalado y funcionando sin `sudo` (`docker run hello-world`)
 - ~10 GB de espacio libre en disco
-- Placa NXP FRDM-MCXW72 con cable USB-C
+- Placa NXP FRDM-MCXW72 o FRDM-MCXW71 con cable USB-C
 - **LinkServer** instalado en el host (paso 5.1)
 
 ---
@@ -117,7 +123,13 @@ west build -p always -b frdm_mcxw72 -d build-mcxw72 zephyr/samples/basic/blinky 
 
 Si termina con `Memory region ... Used Size`, tu entorno está listo.
 
-El directorio `build-mcxw72` es independiente del build anterior de MCXW71.
+Si tienes la **FRDM-MCXW71**, usa la board `frdm_mcxw71` y su propio directorio:
+
+```bash
+west build -p always -b frdm_mcxw71 -d build-mcxw71 zephyr/samples/basic/blinky -- -DCONFIG_BUILD_OUTPUT_HEX=y
+```
+
+Cada placa tiene su directorio de build (`build-mcxw72`, `build-mcxw71`), independientes entre sí.
 `-p always` limpia el directorio indicado antes de compilar; no lo uses sobre un
 build que quieras conservar.
 
@@ -172,15 +184,22 @@ Desde el **host** (no desde el contenedor):
 ```
 
 Usa `zephyrproject/build-mcxw72/zephyr/zephyr.hex` por defecto y selecciona
-`MCXW727C:FRDM-MCXW72`. También acepta una ruta:
+`MCXW727C:FRDM-MCXW72`. Para la FRDM-MCXW71, indica la placa con `BOARD`
+(usa `build-mcxw71` y el dispositivo `MCXW716CxxxA:FRDM-MCXW71`):
+
+```bash
+BOARD=frdm_mcxw71 ./flash.sh
+```
+
+También acepta una ruta:
 
 ```bash
 ./flash.sh ruta/a/otro.hex
 ```
 
-El script solo comprueba que el archivo exista: asegúrate de que cualquier HEX
-indicado explícitamente fue compilado para `frdm_mcxw72` (no para MCXW71).
-Se pueden ajustar las variables `LINKSERVER` y `DEVICE` si tu instalación lo requiere.
+El script comprueba que el HEX fue compilado para la placa indicada en `BOARD`
+(lee `CONFIG_BOARD` del `.config` junto al HEX) y se niega a flashear si no
+coincide. Se pueden ajustar las variables `LINKSERVER` y `DEVICE` si tu instalación lo requiere.
 
 Termina con `Finished writing Flash successfully`.
 
@@ -208,6 +227,10 @@ nombre del dispositivo serie puede variar; verifica cuál corresponde a la placa
 y cierra la consola antes de usar `blhost`.
 
 ## 7. Bluetooth y firmware NBU
+
+> Las secciones 7.1 a 7.3 describen la **FRDM-MCXW72**. Si tienes la
+> **FRDM-MCXW71**, ve directamente a la sección 7.4: el procedimiento de NBU es
+> distinto.
 
 La MCXW72 ejecuta la aplicación Zephyr en el núcleo principal y el controlador
 Bluetooth en el subsistema NBU. Para obtener los archivos de NXP, revisa sus
@@ -352,6 +375,58 @@ el HEX del ejemplo explícitamente con
 `./flash.sh zephyrproject/build-mcxw72-beacon/zephyr/zephyr.hex`. Compilar el
 ejemplo no verifica la radio: hay que comprobar el advertising en hardware.
 
+### 7.4 FRDM-MCXW71: NBU y prueba BLE
+
+La MCXW71 también necesita una imagen NBU para Bluetooth, pero el procedimiento
+difiere del de la MCXW72:
+
+| | MCXW72 | MCXW71 |
+|---|---|---|
+| Archivo | `mcxw72_nbu_ble_all_hosted.bin` | `mcxw71_nbu_ble.sb3` |
+| `blhost` | `flash-erase-all 2` y `write-memory 0x48800000 ...` | `receive-sb-file` (sin borrado ni dirección) |
+| Respaldo/verificación con LinkServer | sí (región NBU a `0x48800000`) | **no**: LinkServer solo ve la flash principal |
+
+Dentro del contenedor, descarga solo el blob BLE de la MCXW71 (las variantes
+`15_4_dyn` añaden 802.15.4 y no hacen falta para el curso):
+
+```bash
+cd /workdir/zephyrproject
+west blobs -l 'mcxw71/mcxw71_nbu_ble[.]sb3$' fetch hal_nxp
+```
+
+**La escritura de la NBU reemplaza el firmware de radio y no se puede respaldar
+con LinkServer**, así que no podrás restaurar el firmware original desde este
+flujo. Para entrar en modo ISP: desconecta la placa de toda alimentación, mantén
+pulsado SW3 mientras conectas el USB y suéltalo. (La documentación de Zephyr
+menciona "MCXW72" en ese paso por una errata; verifica el modo con `blhost`.)
+Comprueba la comunicación sin escribir nada:
+
+```bash
+docker run --rm --device /dev/ttyACM0 --entrypoint blhost mi-zephyr-curso -p /dev/ttyACM0 get-property 1
+```
+
+En la placa probada respondió `Success` y `Current Version = K3.1.0`. Después,
+desde la raíz del proyecto en el host, con la placa en ISP:
+
+```bash
+docker run --rm --device /dev/ttyACM0 -v "$PWD/zephyrproject/modules/hal/nxp/zephyr/blobs/mcxw71:/firmware:ro" --entrypoint blhost mi-zephyr-curso -p /dev/ttyACM0 -- receive-sb-file /firmware/mcxw71_nbu_ble.sb3
+```
+
+La escritura probada respondió `Success`. Sal de ISP pulsando RESET sin mantener
+SW3. Compila y flashea el Heart Rate para la MCXW71:
+
+```bash
+# contenedor
+west build -p always -b frdm_mcxw71 -d build-mcxw71-hr zephyr/samples/bluetooth/peripheral_hr -- -DCONFIG_BUILD_OUTPUT_HEX=y
+# host
+BOARD=frdm_mcxw71 ./flash.sh zephyrproject/build-mcxw71-hr/zephyr/zephyr.hex
+```
+
+Como la NBU no se puede verificar con LinkServer, la prueba es la consola serie:
+con la NBU correcta aparecen `Bluetooth initialized` y `Advertising successfully
+started`. En la placa probada se conectó con nRF Connect y la consola mostró
+`HRS notifications enabled`.
+
 ---
 
 ## Estructura del repositorio
@@ -360,7 +435,7 @@ ejemplo no verifica la radio: hay que comprobar el advertising en hardware.
 Bluetooth-Zephyr-NXP-MCXW72/
 ├── Dockerfile          # Imagen de desarrollo (Zephyr SDK + toolchain)
 ├── run.sh              # Arranque del contenedor
-├── flash.sh            # Flasheo con LinkServer (se ejecuta en el host)
+├── flash.sh            # Flasheo con LinkServer, BOARD=frdm_mcxw71|frdm_mcxw72 (en el host)
 ├── .gitignore
 ├── apps/               # Ubicación prevista para ejercicios propios (actualmente vacía)
 └── zephyrproject/      # Workspace west (NO versionado, ~6.5 GB medidos)
