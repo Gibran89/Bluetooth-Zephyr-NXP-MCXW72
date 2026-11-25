@@ -94,7 +94,8 @@ módulos con el manifiesto.
 *"User site-packages are not visible in this virtualenv"*, y es inofensivo ignorarlo.
 
 **Por qué `--narrow -o=--depth=1`:** `west update` clona los ~70 módulos del manifiesto
-con todo su historial (~4 GB). Estas dos opciones lo reducen a menos de 1 GB:
+con todo su historial. Estas dos opciones reducen mucho la descarga (el tamaño
+final del workspace medido aquí es ~6.5 GB):
 
 - `--narrow` — no descarga todos los tags de cada repositorio
 - `-o=--depth=1` — clon superficial: solo el commit que el manifiesto necesita
@@ -124,6 +125,15 @@ build que quieras conservar.
 `zephyr.bin` y `zephyr.elf`, y LinkServer necesita el `.hex`.
 
 ## 5. Flashear la placa
+
+> **⚠️ A partir de aquí sales del contenedor.** Los pasos 3 y 4 se hacen dentro
+> del contenedor (`./run.sh`). Antes de empezar el paso 5, escribe `exit` para
+> volver a la terminal del **host**. Todo el paso 5 (instalar LinkServer y
+> `./flash.sh`) se ejecuta en el host, porque LinkServer está instalado allí y
+> el contenedor no tiene acceso a la placa. Si ejecutas `./flash.sh` dentro del
+> contenedor verás `No se encuentra LinkServer`.
+>
+> Flujo típico: compilar en el contenedor → `exit` → flashear en el host.
 
 La FRDM-MCXW72 integra un depurador **MCU-Link**. El script usa **LinkServer** y
 requiere que la sonda tenga firmware compatible con LinkServer/CMSIS-DAP. La
@@ -168,30 +178,34 @@ Usa `zephyrproject/build-mcxw72/zephyr/zephyr.hex` por defecto y selecciona
 ./flash.sh ruta/a/otro.hex
 ```
 
-Comprueba que cualquier HEX indicado explícitamente fue compilado para MCXW72.
+El script solo comprueba que el archivo exista: asegúrate de que cualquier HEX
+indicado explícitamente fue compilado para `frdm_mcxw72` (no para MCXW71).
 Se pueden ajustar las variables `LINKSERVER` y `DEVICE` si tu instalación lo requiere.
 
 Termina con `Finished writing Flash successfully`.
 
 ## 6. Consola serie
 
-Conecta el USB de la placa a J14 y usa la consola a 115200 baudios, 8N1:
+Conecta el USB de la placa a J14 y abre la consola a 115200 baudios:
 
 ```bash
 # en el host
 picocom -b 115200 /dev/ttyACM0
 ```
 
-También se puede usar Minicom, que fue la herramienta utilizada en la prueba:
+También se puede usar Minicom:
 
 ```bash
 minicom -D /dev/ttyACM0 -b 115200
 ```
 
-Configura 8N1 y desactiva el control de flujo por hardware y software. Pulsa
-RESET para ver los mensajes de arranque. Para salir de Minicom, pulsa `Ctrl+A`
-y después `X`. El nombre del dispositivo serie puede variar; verifica cuál
-corresponde a la placa y cierra Minicom antes de usar `blhost`.
+Si con Minicom no ves salida, desactiva el control de flujo por hardware
+(`Ctrl+A`, `O`, "Serial port setup", opción F).
+
+Pulsa RESET para ver los mensajes de arranque. Para salir de picocom, pulsa
+`Ctrl+A` y después `Ctrl+X`; para salir de Minicom, `Ctrl+A` y después `X`. El
+nombre del dispositivo serie puede variar; verifica cuál corresponde a la placa
+y cierra la consola antes de usar `blhost`.
 
 ## 7. Bluetooth y firmware NBU
 
@@ -239,8 +253,7 @@ sha256sum "$BACKUP_DIR/nbu-original.bin"
 Conserva el directorio privado: puede contener datos de la placa. Esta copia solo
 cubre la región NBU, no la flash principal, IFR ni fusibles; verificar la lectura
 no garantiza que la restauración funcione. La copia realizada durante esta
-prueba se guardó fuera del repositorio en
-`~/mcxw72-nbu-backup-6qRSlYpJ/nbu-original.bin` y coincidió con la flash; su
+prueba se guardó fuera del repositorio y coincidió con la flash; su
 restauración no se probó. No subas el respaldo al repositorio.
 
 Para entrar en modo ISP, cierra el programa de consola, desconecta todas las
@@ -318,8 +331,12 @@ Advertising successfully started
 Busca `Zephyr Heartrate Sensor` con nRF Connect o NXP IoT Toolbox y conecta.
 El servicio Heart Rate ofrece valores simulados; activa las notificaciones de
 Heart Rate Measurement para recibirlos. En nuestra prueba se observó la conexión
-y `BAS Notifications enabled` para batería; las notificaciones de pulso aún no
-se habían confirmado. Para volver a `blinky`, ejecuta `./flash.sh` sin argumentos.
+y, al activar las notificaciones de Heart Rate Measurement, la consola mostró
+`HRS notifications enabled` y nRF Connect recibió valores simulados que
+cambiaban cada segundo, lo que confirma que el servicio funciona. Si el
+teléfono conservaba un emparejamiento anterior (`BONDED` en nRF Connect), elimina
+el vínculo antes de conectar. Para volver a `blinky`, ejecuta `./flash.sh` sin
+argumentos.
 
 ### 7.3 Ejemplo beacon
 
@@ -346,14 +363,14 @@ Bluetooth-Zephyr-NXP-MCXW72/
 ├── flash.sh            # Flasheo con LinkServer (se ejecuta en el host)
 ├── .gitignore
 ├── apps/               # Ubicación prevista para ejercicios propios (actualmente vacía)
-└── zephyrproject/      # Workspace west (NO versionado, ~2 GB)
+└── zephyrproject/      # Workspace west (NO versionado, ~6.5 GB medidos)
 ```
 
 **Dónde se ejecuta cada cosa:**
 
 | Host | Contenedor |
 |---|---|
-| `docker build`, `./run.sh`, `./flash.sh`, `picocom` | `west init`, `west update`, `west build` |
+| `docker build`, `./run.sh`, `./flash.sh`, `picocom`, `blhost` (vía `docker run`), LinkServer | `west init`, `west update`, `west build`, `west blobs fetch` |
 
 ---
 
@@ -381,8 +398,8 @@ errores. `run.sh` ya los evita usando `--entrypoint bash`.
 **Permisos denegados en archivos del volumen** — reconstruye la imagen pasando tus
 `UID`/`GID` reales como en el paso 1.
 
-**`west update` se queda sin espacio** — el workspace ocupa ~2 GB con clones superficiales
-(~4 GB sin ellos) y el build varios cientos de MB.
+**`west update` se queda sin espacio** — el workspace ocupa ~6.5 GB (medido con
+`du -sh zephyrproject`, sin contar los builds) y cada build añade entre 25 y 55 MB.
 
 **Error de versión del toolchain / SDK** — la versión de Zephyr y la del Zephyr SDK de la imagen
 deben ser compatibles. Comprueba cuál trae la imagen con:

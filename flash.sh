@@ -9,6 +9,12 @@ DEVICE="${DEVICE:-MCXW727C:FRDM-MCXW72}"
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HEX="${1:-${PROJECT_DIR}/zephyrproject/build-mcxw72/zephyr/zephyr.hex}"
 
+if [[ -f /.dockerenv ]]; then
+  echo "Estás dentro del contenedor: flash.sh debe ejecutarse en el HOST." >&2
+  echo "Sal con 'exit' y vuelve a lanzar ./flash.sh desde la terminal del host." >&2
+  exit 1
+fi
+
 if [[ ! -x "$LINKSERVER" ]]; then
   echo "No se encuentra LinkServer en $LINKSERVER" >&2
   echo "Instálalo con el MCUXpresso Installer o define LINKSERVER=/ruta/a/LinkServer" >&2

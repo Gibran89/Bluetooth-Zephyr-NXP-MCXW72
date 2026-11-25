@@ -1,4 +1,4 @@
-# Workspace de Zephyr (se genera con `west init` + `west update`, ~5 GB)
+# Workspace de Zephyr (se genera con `west init` + `west update`, ~6.5 GB)
 zephyrproject/
 
 # Artefactos de build
